@@ -1,0 +1,64 @@
+{% extends "_base.html.j2" %}
+{% block title %}{{ report.title }} · {{ site.title }}{% endblock %}
+{% block meta %}<meta name="description" content="{{ report.summary }}">{% endblock %}
+{% block content %}
+<h1>{{ report.title }}</h1>
+<p class="lede">{{ report.summary }}</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">총 허가 건수</div></div>
+  {% if stats.company_count %}
+  <div class="kpi"><div class="n">{{ "{:,}".format(stats.company_count) }}</div><div class="l">허가 보유 업체 수</div></div>
+  {% endif %}
+  {% if stats.peak_year %}
+  <div class="kpi"><div class="n">{{ stats.peak_year }}</div><div class="l">최다 허가 연도 ({{ stats.peak_count }}건)</div></div>
+  {% endif %}
+  {% if stats.top3_share %}
+  <div class="kpi"><div class="n">{{ stats.top3_share }}%</div><div class="l">상위 3개사 점유</div></div>
+  {% endif %}
+</div>
+
+{% if charts.yearly_trend %}
+<h2>연도별 허가 추이</h2>
+<figure><img src="{{ charts.yearly_trend }}" alt="연도별 허가 건수 막대그래프">
+<figcaption>{% if stats.first_year %}{{ stats.first_year }}~{{ stats.last_year }}년 허가 건수.{% endif %} 취소·취하 이력이 반영된 시점 기준입니다.</figcaption></figure>
+{% endif %}
+
+{% if charts.status_mix %}
+<h2>품목 상태</h2>
+<figure><img src="{{ charts.status_mix }}" alt="품목 상태 분포 원그래프">
+<figcaption>취소·취하 이력이 있는 품목의 비중입니다.</figcaption></figure>
+{% endif %}
+
+{% if charts.grade_mix %}
+<h2>등급 분포</h2>
+<figure><img src="{{ charts.grade_mix }}" alt="품목 등급 분포 원그래프"></figure>
+{% endif %}
+
+{% if charts.domestic_vs_import %}
+<h2>제조 · 수입 구분</h2>
+<figure><img src="{{ charts.domestic_vs_import }}" alt="제조 수입 구분 막대그래프"></figure>
+{% endif %}
+
+{% if charts.top_companies %}
+<h2>업체별 허가 현황</h2>
+<figure><img src="{{ charts.top_companies }}" alt="업체별 허가 건수 가로 막대그래프"></figure>
+{% endif %}
+
+<h2>허가 목록</h2>
+<p class="note">전체 {{ "{:,}".format(total_rows) }}건 중 최신 {{ "{:,}".format(shown_rows) }}건을 표시합니다. 전체 데이터는 아래에서 내려받으십시오.</p>
+<div class="dl">
+  <a href="{{ report.slug }}.csv" download>CSV 내려받기</a>
+  <a href="{{ report.slug }}.json" download>JSON 내려받기</a>
+</div>
+<div class="scroll">
+<table>
+  <thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

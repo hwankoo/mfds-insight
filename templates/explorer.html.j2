@@ -1,0 +1,61 @@
+{% extends "_base.html.j2" %}
+{% block title %}대화형 탐색기 · {{ site.title }}{% endblock %}
+{% block meta %}<meta name="description" content="의료기기 품목허가 데이터를 조건별로 직접 탐색합니다.">{% endblock %}
+{% block content %}
+<h1>대화형 허가데이터 탐색기</h1>
+<p class="lede">품목·업체·상태·연도를 바꿔가며 즉시 집계됩니다. 데이터는 처음 한 번만 내려받고,
+이후 모든 계산은 브라우저에서 처리되므로 서버로 아무것도 전송되지 않습니다.</p>
+
+<div id="status" class="statusbar">데이터를 불러오는 중입니다…</div>
+
+<section id="filters" class="panel"></section>
+
+<div id="kpis" class="kpis"></div>
+
+<section id="chart-year" class="chart"></section>
+<div class="two">
+  <section id="chart-status" class="chart"></section>
+  <section id="chart-company" class="chart"></section>
+</div>
+
+<h2>허가 목록</h2>
+<div id="table-host"></div>
+
+<p class="note">표시 항목은 게시 허용 목록에 정의된 컬럼으로 한정됩니다.
+집계 결과는 참고용이며, 개별 허가사항은 원문 확인이 필요합니다.</p>
+
+<style>
+  .statusbar{background:var(--soft);border:1px solid var(--line);border-radius:6px;
+             padding:9px 13px;font-size:13px;color:var(--muted);margin-bottom:18px}
+  .statusbar .err{color:#b3261e;margin:0}
+  .panel{background:var(--soft);border:1px solid var(--line);border-radius:8px;
+         padding:16px 18px;margin-bottom:22px}
+  .fgroup{margin-bottom:15px}
+  .fgroup label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+  .fgroup input[type=search],.fgroup select{width:100%;max-width:420px;padding:7px 10px;
+         border:1px solid var(--line);border-radius:6px;font-size:14px;background:#fff}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);
+        border-radius:999px;padding:5px 12px;font-size:13px;font-weight:400;cursor:pointer;margin:0}
+  .chip input{margin:0}
+  .yrow{display:flex;gap:12px;max-width:420px}
+  .yrow input{flex:1}
+  .yval{font-size:13px;color:var(--muted)}
+  .reset{background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 14px;
+         font-size:13px;cursor:pointer}
+  .chart{margin:26px 0}
+  .chart h3{font-size:15px;margin:0 0 8px}
+  .chart svg{width:100%;height:auto;max-width:660px}
+  .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .lgi{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted)}
+  .lgi i{width:11px;height:11px;border-radius:2px;display:inline-block}
+  .muted{color:var(--muted);font-size:13.5px}
+  .pager{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+  .pager button{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 12px;
+                font-size:13px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .pager .dl{margin-left:auto;border-color:var(--accent);color:var(--accent)}
+</style>
+<script src="explorer.js"></script>
+{% endblock %}

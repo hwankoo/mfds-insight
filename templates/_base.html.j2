@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="{{ site.locale | default('ko-KR') }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{% block title %}{{ site.title }}{% endblock %}</title>
+{% block meta %}{% endblock %}
+<style>
+  :root{--ink:#16202e;--muted:#6b7480;--line:#e2e6ec;--accent:#1F3864;--bg:#fff;--soft:#f6f8fb}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic","맑은 고딕",sans-serif;
+       line-height:1.7;font-size:16px}
+  .wrap{max-width:920px;margin:0 auto;padding:0 20px}
+  header{border-bottom:1px solid var(--line);padding:26px 0;margin-bottom:34px}
+  header .t{font-size:19px;font-weight:700;color:var(--accent);text-decoration:none}
+  header .s{color:var(--muted);font-size:13px;margin-top:3px}
+  h1{font-size:29px;line-height:1.35;margin:0 0 10px}
+  h2{font-size:20px;margin:44px 0 14px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  .lede{color:var(--muted);font-size:15px;margin-bottom:30px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:24px 0}
+  .kpi{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .kpi .n{font-size:23px;font-weight:700;color:var(--accent)}
+  .kpi .l{font-size:12px;color:var(--muted);margin-top:2px}
+  figure{margin:22px 0}
+  figure img{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:7px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:14px}
+  th,td{border-bottom:1px solid var(--line);padding:8px 9px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:600;white-space:nowrap}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .dl a{display:inline-block;margin-right:10px;font-size:13.5px;color:var(--accent)}
+  .note{background:var(--soft);border-left:3px solid var(--accent);padding:12px 15px;
+        font-size:13.5px;color:var(--muted);border-radius:0 6px 6px 0;margin:20px 0}
+  footer{margin:56px 0 40px;padding-top:18px;border-top:1px solid var(--line);
+         font-size:12.5px;color:var(--muted)}
+  a{color:var(--accent)}
+  ul.cards{list-style:none;padding:0}
+  ul.cards li{border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin-bottom:12px}
+  ul.cards a{font-size:17px;font-weight:600;text-decoration:none}
+  ul.cards p{margin:5px 0 0;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="t" href="{{ site.base_url | default('') }}/">{{ site.title }}</a>
+  <div class="s">{{ site.subtitle }}</div>
+</div></header>
+<main class="wrap">{% block content %}{% endblock %}</main>
+<footer><div class="wrap">
+  <p>{{ site.attribution }}</p>
+  <p>본 자료는 공개된 허가 정보를 재가공한 참고 자료이며, 법적 효력이 있는 규제 해석이 아닙니다.
+     실제 인허가 판단은 원문 및 소관 기관 확인이 필요합니다.</p>
+  <p>생성 {{ generated }}{% if site.author %} · {{ site.author }}{% endif %}</p>
+</div></footer>
+</body>
+</html>

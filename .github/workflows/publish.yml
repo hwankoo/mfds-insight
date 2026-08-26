@@ -1,0 +1,70 @@
+# 매월 1일 자동으로 데이터를 갱신해 GitHub Pages 에 게시합니다.
+# 인증키는 저장소 Settings > Secrets and variables > Actions 에 등록하십시오.
+#   MFDS_API_KEY / MFDS_BASE_URL / MFDS_ENDPOINT
+name: Publish MFDS Insight
+
+on:
+  schedule:
+    - cron: "0 18 1 * *"      # 매월 1일 03:00 KST (UTC 18:00 전날)
+  workflow_dispatch:           # 수동 실행 버튼
+  push:
+    branches: [main]
+    paths:
+      - "config/**"
+      - "src/**"
+      - "templates/**"
+      - "static/**"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 한글 폰트 설치
+        run: sudo apt-get update && sudo apt-get install -y fonts-nanum
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 설정·보안 점검
+        env:
+          MFDS_API_KEY: ${{ secrets.MFDS_API_KEY }}
+          MFDS_BASE_URL: ${{ secrets.MFDS_BASE_URL }}
+          MFDS_ENDPOINT: ${{ secrets.MFDS_ENDPOINT }}
+        run: python run.py check
+
+      - name: 수집 및 사이트 생성
+        env:
+          MFDS_API_KEY: ${{ secrets.MFDS_API_KEY }}
+          MFDS_BASE_URL: ${{ secrets.MFDS_BASE_URL }}
+          MFDS_ENDPOINT: ${{ secrets.MFDS_ENDPOINT }}
+        run: python run.py run
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./output
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

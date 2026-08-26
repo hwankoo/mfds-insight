@@ -1,0 +1,23 @@
+{% extends "_base.html.j2" %}
+{% block content %}
+<h1>{{ site.title }}</h1>
+<p class="lede">{{ site.subtitle }}</p>
+{% if explorer %}
+<ul class="cards">
+  <li>
+    <a href="{{ explorer_slug }}/">대화형 탐색기</a>
+    <p>품목·업체·상태·연도를 직접 바꿔가며 집계해 볼 수 있습니다.</p>
+    <p>{{ "{:,}".format(explorer.rows) }}건 수록 · {{ explorer.size_mb }} MB</p>
+  </li>
+</ul>
+{% endif %}
+<ul class="cards">
+{% for e in entries %}
+  <li>
+    <a href="{{ e.slug }}/">{{ e.title }}</a>
+    <p>{{ e.summary }}</p>
+    <p>총 {{ "{:,}".format(e.total) }}건{% if e.last_year %} · 최근 허가 {{ e.last_year }}년{% endif %}</p>
+  </li>
+{% endfor %}
+</ul>
+{% endblock %}
