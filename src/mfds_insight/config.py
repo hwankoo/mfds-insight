@@ -7,8 +7,8 @@ import sys
 import logging
 from urllib.parse import quote, quote_plus, unquote
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 try:
     import tomllib  # Python 3.11+
@@ -18,6 +18,19 @@ except ModuleNotFoundError:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 ENV_KEY_NAME = "MFDS_API_KEY"
+
+# 화면 표기 시각은 한국 표준시로 고정한다(Actions 러너는 UTC).
+# 한국은 서머타임이 없으므로 고정 오프셋으로 충분하며 tzdata 의존도 없다.
+KST = timezone(timedelta(hours=9), "KST")
+
+
+def now_kst() -> datetime:
+    return datetime.now(KST)
+
+
+def stamp_kst() -> str:
+    """사이트에 표기하는 생성 시각. 예: 2026-11-04 20:30 KST"""
+    return now_kst().strftime("%Y-%m-%d %H:%M KST")
 
 
 class ConfigError(RuntimeError):
@@ -155,6 +168,11 @@ def load(root: Path | None = None, config_name: str = "settings.toml") -> Settin
         log.info(".env 의 MFDS_BASE_URL/MFDS_ENDPOINT 를 사용합니다.")
     elif env_ep:
         raw["api"]["endpoint"] = env_ep
+
+    from .colors import SCHEMES
+    scheme = str(raw["chart"].get("scheme", "accent")).lower()
+    if scheme not in SCHEMES:
+        raise ConfigError(f"chart.scheme 은 {', '.join(SCHEMES)} 중 하나여야 합니다: {scheme!r}")
 
     exp = raw.get("explorer", {})
     if exp.get("enabled"):
