@@ -13,6 +13,12 @@
 {% block content %}
 <h1>{{ report.title }}</h1>
 <p class="lede">{{ report.summary }}</p>
+{% if report.keywords %}
+<p class="fine">집계 기준 · 품목명
+{% for k in report.keywords %}「{{ k }}」{% if not loop.last %} · {% endif %}{% endfor %}
+({% if report.match == "exact" %}정확히 일치, 띄어쓰기 차이는 같은 품목으로 봄{% else %}포함{% endif %}
+{%- if report.exclude %}, 제외: {% for k in report.exclude %}「{{ k }}」{% if not loop.last %} · {% endif %}{% endfor %}{% endif %})</p>
+{% endif %}
 
 <div class="kpis">
   <div class="kpi"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">총 허가 건수</div></div>

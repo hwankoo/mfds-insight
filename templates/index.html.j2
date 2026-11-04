@@ -7,7 +7,7 @@
   <li>
     <a href="{{ explorer_slug }}/">대화형 탐색기</a>
     <p>품목·업체·상태·연도를 직접 바꿔가며 집계해 볼 수 있습니다.</p>
-    <p>{{ "{:,}".format(explorer.rows) }}건 수록 · {{ explorer.size_mb }} MB</p>
+    <p>{{ "{:,}".format(explorer.rows) }}건 수록{% if explorer.scope and explorer.scope.kind == "reports" %}(아래 리포트 대상 품목){% endif %} · {{ explorer.size_mb }} MB</p>
   </li>
 </ul>
 {% endif %}
