@@ -1,6 +1,15 @@
 {% extends "_base.html.j2" %}
 {% block title %}{{ report.title }} · {{ site.title }}{% endblock %}
 {% block meta %}<meta name="description" content="{{ report.summary }}">{% endblock %}
+
+{#- 화면 폭에 따라 차트 파일을 고른다. 작은 화면용(sm)은 글자를 크게 그려 둔 별도 파일이다. -#}
+{% macro chart(key, alt) -%}
+<picture>
+  <source media="(max-width: {{ breakpoint - 1 }}px)" srcset="{{ charts[key].sm }}">
+  <img src="{{ charts[key].lg }}" alt="{{ alt }}" loading="lazy" decoding="async">
+</picture>
+{%- endmacro %}
+
 {% block content %}
 <h1>{{ report.title }}</h1>
 <p class="lede">{{ report.summary }}</p>
@@ -11,7 +20,7 @@
   <div class="kpi"><div class="n">{{ "{:,}".format(stats.company_count) }}</div><div class="l">허가 보유 업체 수</div></div>
   {% endif %}
   {% if stats.peak_year %}
-  <div class="kpi"><div class="n">{{ stats.peak_year }}</div><div class="l">최다 허가 연도 ({{ stats.peak_count }}건)</div></div>
+  <div class="kpi"><div class="n">{{ stats.peak_year }}</div><div class="l">최다 허가 연도 ({{ "{:,}".format(stats.peak_count) }}건)</div></div>
   {% endif %}
   {% if stats.top3_share %}
   <div class="kpi"><div class="n">{{ stats.top3_share }}%</div><div class="l">상위 3개사 점유</div></div>
@@ -20,29 +29,40 @@
 
 {% if charts.yearly_trend %}
 <h2>연도별 허가 추이</h2>
-<figure><img src="{{ charts.yearly_trend }}" alt="연도별 허가 건수 막대그래프">
-<figcaption>{% if stats.first_year %}{{ stats.first_year }}~{{ stats.last_year }}년 허가 건수.{% endif %} 취소·취하 이력이 반영된 시점 기준입니다.</figcaption></figure>
+<figure>{{ chart("yearly_trend", "연도별 허가 건수 막대그래프") }}
+<figcaption>
+  {%- if stats.first_year %}{{ stats.first_year }}~{{ stats.last_year }}년 허가일자 기준 건수(취소·취하 품목 포함).{% endif %}
+  {%- if stats.partial_year %} <strong>* {{ stats.partial_year.year }}년은 {{ stats.partial_year.through_month }}월까지의 허가분만 집계되어 다른 해와 직접 비교할 수 없습니다(빗금 막대).</strong>{% endif %}
+</figcaption></figure>
 {% endif %}
 
-{% if charts.status_mix %}
+{% if show_status and stats.status_rows %}
 <h2>품목 상태</h2>
-<figure><img src="{{ charts.status_mix }}" alt="품목 상태 분포 원그래프">
-<figcaption>취소·취하 이력이 있는 품목의 비중입니다.</figcaption></figure>
+<div class="kpis status">
+  {% for r in stats.status_rows %}
+  <div class="kpi{% if r.label != '정상' %} alt{% endif %}">
+    <div class="n">{{ "{:,}".format(r.count) }}<span class="u">건</span></div>
+    <div class="l">{{ r.label }} · {{ r.pct }}%</div>
+  </div>
+  {% endfor %}
+</div>
+<p class="fine">취소·취하는 원본 데이터에 취소·취하 구분 값이 있는 품목입니다.</p>
 {% endif %}
 
 {% if charts.grade_mix %}
 <h2>등급 분포</h2>
-<figure><img src="{{ charts.grade_mix }}" alt="품목 등급 분포 원그래프"></figure>
+<figure>{{ chart("grade_mix", "품목 등급 분포 가로 막대그래프") }}</figure>
 {% endif %}
 
 {% if charts.domestic_vs_import %}
 <h2>제조 · 수입 구분</h2>
-<figure><img src="{{ charts.domestic_vs_import }}" alt="제조 수입 구분 막대그래프"></figure>
+<figure>{{ chart("domestic_vs_import", "제조 수입 구분 가로 막대그래프") }}</figure>
 {% endif %}
 
 {% if charts.top_companies %}
 <h2>업체별 허가 현황</h2>
-<figure><img src="{{ charts.top_companies }}" alt="업체별 허가 건수 가로 막대그래프"></figure>
+<figure>{{ chart("top_companies", "업체별 허가 건수 가로 막대그래프") }}
+<figcaption>허가 건수 상위 업체. 긴 업체명은 줄여 표시했으며, 전체 이름은 아래 목록과 내려받기 파일에 있습니다.</figcaption></figure>
 {% endif %}
 
 <h2>허가 목록</h2>
@@ -51,12 +71,12 @@
   <a href="{{ report.slug }}.csv" download>CSV 내려받기</a>
   <a href="{{ report.slug }}.json" download>JSON 내려받기</a>
 </div>
-<div class="scroll">
-<table>
-  <thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+<div class="scroll" tabindex="0" role="region" aria-label="허가 목록 표 (가로로 스크롤)">
+<table class="data">
+  <thead><tr>{% for c in columns %}<th scope="col"{% if nowrap[loop.index0] %} class="nw"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
   <tbody>
   {% for row in rows %}
-    <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+    <tr>{% for cell in row %}<td{% if nowrap[loop.index0] %} class="nw"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
   {% endfor %}
   </tbody>
 </table>

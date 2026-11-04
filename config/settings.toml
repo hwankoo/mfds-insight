@@ -141,7 +141,7 @@ keywords = ["치과용임플란트고정체", "치과용임플란트"]
 # build 로그의 "포함된 품목명 상위" 를 보고 범위가 맞는지 확인하십시오.
 exclude  = ["상부구조물", "어버트먼트", "시술기구", "수술기구"]
 filters  = {}
-charts   = ["yearly_trend", "status_mix", "top_companies", "domestic_vs_import"]
+charts   = ["yearly_trend", "status_mix", "top_companies", "domestic_vs_import"]   # status_mix 는 숫자로 표시
 summary  = "국내 치과용 임플란트 고정체의 연도별 허가 추이와 업체 분포를 정리한 리포트입니다."
 
 [[report]]
@@ -165,9 +165,10 @@ summary  = "고주파 계열 의료기기의 허가 현황을 정리한 리포�
 [chart]
 engine     = "matplotlib"        # 정적 SVG. 외부 스크립트를 로드하지 않습니다.
 font       = "NanumGothic"       # 한글 폰트. 미설치 시 자동 대체 후 경고합니다.
-palette    = ["#1F3864", "#2E5C9A", "#5B8FD4", "#9DBFE8", "#C9D9EE", "#8C8C8C"]
-width_in   = 9.0
-height_in  = 4.8
+palette    = ["#1F3864", "#C2570C", "#2F7D5B", "#7B4FA6", "#3D6FB6", "#8A6D1F"]   # 모두 흰 배경 대비 4.5:1 이상
+# 차트는 화면 크기별로 두 장씩 만듭니다(데스크톱용·모바일용, <picture> 로 자동 선택).
+# 글자 크기·높이는 항목 수에 맞춰 자동 결정되므로 보통은 바꿀 필요가 없습니다.
+width_in   = 9.0          # 데스크톱용 폭. 줄이면 글자가 상대적으로 커집니다.
 dpi        = 110
 top_n      = 12
 

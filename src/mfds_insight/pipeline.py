@@ -248,12 +248,26 @@ def summarize(df: pd.DataFrame, settings: Settings) -> dict:
             res["peak_year"] = int(yearly.idxmax())
             res["peak_count"] = int(yearly.max())
 
+    # 집계 중인 해: 데이터의 마지막 연도가 생성 시점(KST)의 연도와 같으면 1년치가 아니다.
+    # 추세 차트에서 다른 해와 같은 무게로 읽히지 않도록 표시한다.
+    if "_허가일" in df.columns and df["_허가일"].notna().any():
+        from .config import now_kst
+        last = df["_허가일"].max()
+        res["last_date"] = last.strftime("%Y-%m-%d")
+        if last.year >= now_kst().year and last.month < 12:
+            res["partial_year"] = {"year": int(last.year), "through_month": int(last.month)}
+
     for key, col in (("grade_mix", "등급"),
                      ("domestic_vs_import", "제조수입구분"),
                      ("status_mix", "품목상태")):
         if col in df.columns:
             counts = df[col].replace("", "미상").value_counts()
             res[key] = {str(k): int(v) for k, v in counts.items()}
+
+    if res.get("status_mix"):
+        total = sum(res["status_mix"].values()) or 1
+        res["status_rows"] = [{"label": k, "count": v, "pct": round(v / total * 100, 1)}
+                              for k, v in res["status_mix"].items()]
 
     if "업체명" in df.columns:
         comp = df["업체명"].replace("", "미상").value_counts()

@@ -8,7 +8,7 @@
   var COLS = [];
   var state = { facets: {}, q: "", y0: null, y1: null, sortDesc: true, page: 0 };
   var PAGE = 50;
-  var PALETTE = ["#1F3864", "#2E5C9A", "#5B8FD4", "#9DBFE8", "#C9D9EE", "#8C8C8C"];
+  var PALETTE = ["#1F3864", "#C2570C", "#2F7D5B", "#7B4FA6", "#3D6FB6", "#8A6D1F"];  // 흰 배경 대비 4.5:1 이상
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -19,6 +19,14 @@
   }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
   function fmt(n) { return Number(n).toLocaleString("ko-KR"); }
+  // 표 표시용: 날짜 구분자, 줄바꿈 금지 열. CSV 내려받기는 원본 값을 유지한다.
+  var DATE_COLS = { "허가일자": 1, "취소취하일자": 1, "변경일자": 1 };
+  var NOWRAP = { "허가일자": 1, "취소취하일자": 1, "변경일자": 1, "허가번호": 1,
+                 "제조수입구분": 1, "품목상태": 1, "추적관리대상": 1 };
+  function cell(col, v) {
+    v = v || "";
+    return DATE_COLS[col] && /^\d{8}$/.test(v) ? v.slice(0, 4) + "-" + v.slice(4, 6) + "-" + v.slice(6) : v;
+  }
 
   /* ---------- 로딩 ---------- */
   function decode(enc) {
@@ -77,9 +85,9 @@
     // 텍스트 검색
     if (m.search && m.search.length) {
       var g = el("div", "fgroup");
-      g.appendChild(el("label", null, m.search.join(" · ") + " 검색"));
+      var sl = el("label", "flabel", m.search.join(" · ") + " 검색"); sl.htmlFor = "q"; g.appendChild(sl);
       var inp = el("input");
-      inp.type = "search";
+      inp.type = "search"; inp.id = "q";
       inp.placeholder = "예: 임플란트";
       inp.addEventListener("input", function () {
         state.q = inp.value.trim();
@@ -95,7 +103,7 @@
       var vals = uniqueSorted(c);
       if (vals.length > 30) return;              // 값이 너무 많으면 셀렉트로
       var g = el("div", "fgroup");
-      g.appendChild(el("label", null, c));
+      g.appendChild(el("span", "flabel", c));
       var box = el("div", "chips");
       state.facets[c] = {};
       vals.forEach(function (v) {
@@ -121,8 +129,8 @@
       var vals = uniqueSorted(c);
       if (vals.length <= 30) return;
       var g = el("div", "fgroup");
-      g.appendChild(el("label", null, c));
-      var sel = el("select");
+      var sid = "s_" + c; var ll = el("label", "flabel", c); ll.htmlFor = sid; g.appendChild(ll);
+      var sel = el("select"); sel.id = sid;
       sel.appendChild(el("option", null, "(전체)"));
       vals.forEach(function (v) {
         var o = el("option", null, v); o.value = v; sel.appendChild(o);
@@ -144,27 +152,31 @@
       var min = Math.min.apply(null, ys), max = Math.max.apply(null, ys);
       state.y0 = min; state.y1 = max;
       var g2 = el("div", "fgroup");
-      g2.appendChild(el("label", null, "허가 연도"));
+      g2.appendChild(el("span", "flabel", "허가 연도"));
       var row = el("div", "yrow");
-      var out = el("span", "yval", min + " – " + max);
       function mk(isStart) {
-        var s = el("input");
-        s.type = "range"; s.min = min; s.max = max;
-        s.value = isStart ? min : max;
-        s.addEventListener("input", function () {
-          var v = parseInt(s.value, 10);
-          if (isStart) state.y0 = Math.min(v, state.y1);
-          else state.y1 = Math.max(v, state.y0);
-          out.textContent = state.y0 + " – " + state.y1;
+        var lab = el("label", "ysel");
+        lab.appendChild(el("span", null, isStart ? "시작" : "종료"));
+        var sel = el("select");
+        for (var y = min; y <= max; y++) {
+          var o = el("option", null, y + "년"); o.value = y; sel.appendChild(o);
+        }
+        sel.value = isStart ? min : max;
+        sel.addEventListener("change", function () {
+          var v = parseInt(sel.value, 10);
+          if (isStart) { state.y0 = v; if (state.y1 < v) { state.y1 = v; endSel.value = v; } }
+          else { state.y1 = v; if (state.y0 > v) { state.y0 = v; startSel.value = v; } }
           state.page = 0;
           render();
         });
-        return s;
+        lab.appendChild(sel);
+        row.appendChild(lab);
+        return sel;
       }
-      row.appendChild(mk(true));
-      row.appendChild(mk(false));
+      var startSel = mk(true);
+      row.appendChild(el("span", "ydash", "~"));
+      var endSel = mk(false);
       g2.appendChild(row);
-      g2.appendChild(out);
       host.appendChild(g2);
     }
 
@@ -213,97 +225,151 @@
     return idx;
   }
 
-  /* ---------- 차트 (SVG 직접 생성) ---------- */
+  /* ---------- 차트 (SVG 직접 생성) ----------
+     viewBox 를 실제 표시 폭(px)과 같게 잡아 1:1 로 그린다. 그래서 화면이 좁아도
+     글자가 축소되지 않는다(FONT px 고정). 폭이 바뀌면 다시 그린다(onResize). */
   var SVGNS = "http://www.w3.org/2000/svg";
+  var FONT = 13, INK = "#2b3440", GRID = "#e2e6ec", PARTIAL = "#7489AE";
+  var measureCtx = null;
+  function textWidth(str) {
+    if (!measureCtx) {
+      measureCtx = document.createElement("canvas").getContext("2d");
+      measureCtx.font = FONT + "px " + getComputedStyle(document.body).fontFamily;
+    }
+    return measureCtx.measureText(str).width;
+  }
   function svgEl(tag, attrs) {
     var e = document.createElementNS(SVGNS, tag);
     Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
     return e;
   }
-  function svgText(x, y, str, anchor, size) {
+  function svgText(x, y, str, anchor, opts) {
+    opts = opts || {};
     var t = svgEl("text", { x: x, y: y, "text-anchor": anchor || "middle",
-                            "font-size": size || 11, fill: "#4a5462" });
+                            "font-size": opts.size || FONT, fill: opts.fill || INK });
+    if (opts.weight) t.setAttribute("font-weight", opts.weight);
     t.textContent = str;
     return t;
   }
-
-  function barChart(host, pairs, title) {
+  function ellipsize(str, maxPx) {
+    if (textWidth(str) <= maxPx) return str;
+    var lo = 0, hi = str.length;
+    while (lo < hi) {                              // 들어가는 최대 길이를 이분 탐색
+      var mid = (lo + hi + 1) >> 1;
+      if (textWidth(str.slice(0, mid) + "…") <= maxPx) lo = mid; else hi = mid - 1;
+    }
+    return str.slice(0, Math.max(1, lo)) + "…";
+  }
+  function niceTicks(max, n) {
+    if (max <= 0) return [0];
+    var raw = max / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].map(function (k) { return k * mag; })
+      .filter(function (s) { return s >= raw; })[0];
+    step = Math.max(1, Math.round(step));
+    var out = [];
+    for (var v = 0; v <= max + 1e-9; v += step) out.push(v);
+    if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
+    return out;
+  }
+  function widthOf(host) { return Math.max(260, Math.floor(host.clientWidth || 600)); }
+  function newSvg(W, H, label) {
+    return svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H,
+                          role: "img", "aria-label": label });
+  }
+  function chartHead(host, title) {
     clear(host);
     host.appendChild(el("h3", null, title));
+  }
+
+  function barChart(host, pairs, title, partial) {
+    chartHead(host, title);
     if (!pairs.length) { host.appendChild(el("p", "muted", "데이터 없음")); return; }
-    var W = 640, H = 240, P = { l: 44, r: 12, t: 12, b: 30 };
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
+    var W = widthOf(host), H = W < 560 ? 230 : 280;
     var max = Math.max.apply(null, pairs.map(function (p) { return p[1]; })) || 1;
-    var bw = (W - P.l - P.r) / pairs.length;
+    var ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+    var P = { l: Math.ceil(textWidth(fmt(top))) + 12, r: 8, t: 10, b: 28 };
+    var svg = newSvg(W, H, title);
+    var defs = svgEl("defs"), pat = svgEl("pattern", { id: "hatch", width: 6, height: 6,
+      patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+    pat.appendChild(svgEl("rect", { width: 6, height: 6, fill: PARTIAL }));
+    pat.appendChild(svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "#fff", "stroke-width": 2 }));
+    defs.appendChild(pat); svg.appendChild(defs);
+    var ih = H - P.t - P.b, iw = W - P.l - P.r;
+    ticks.forEach(function (t) {
+      var y = H - P.b - ih * (t / top);
+      svg.appendChild(svgEl("line", { x1: P.l, y1: y, x2: W - P.r, y2: y, stroke: GRID }));
+      svg.appendChild(svgText(P.l - 6, y + 4, fmt(t), "end"));
+    });
+    var bw = iw / pairs.length;
+    // 눈금 글자가 겹치지 않도록 간격(px)에 맞춰 1·2·5·10년 단위로 띄운다.
+    var need = textWidth("2026*") + 10;
+    var step = [1, 2, 5, 10, 20].filter(function (k) { return bw * k >= need; })[0] || 20;
     pairs.forEach(function (p, i) {
-      var h = (H - P.t - P.b) * (p[1] / max);
-      var x = P.l + i * bw, y = H - P.b - h;
-      var r = svgEl("rect", { x: x + bw * 0.15, y: y, width: bw * 0.7, height: Math.max(h, 1),
+      var isPartial = partial && String(partial.year) === p[0];
+      var h = ih * (p[1] / top), x = P.l + i * bw, y = H - P.b - h;
+      var r = svgEl("rect", { x: x + bw * 0.14, y: y, width: Math.max(bw * 0.72, 1),
+                              height: Math.max(h, 1), rx: 2,
+                              fill: isPartial ? "url(#hatch)" : PALETTE[0] });
+      var ttl = svgEl("title");
+      ttl.textContent = p[0] + "년: " + fmt(p[1]) + "건" +
+        (isPartial ? " (" + partial.through_month + "월까지 집계)" : "");
+      r.appendChild(ttl);
+      svg.appendChild(r);
+      if (+p[0] % step === 0 || (isPartial && bw >= need)) {
+        svg.appendChild(svgText(x + bw / 2, H - P.b + 18, p[0] + (isPartial ? "*" : "")));
+      }
+    });
+    svg.appendChild(svgEl("line", { x1: P.l, y1: H - P.b, x2: W - P.r, y2: H - P.b, stroke: "#9aa3ae" }));
+    host.appendChild(svg);
+    if (partial && pairs.some(function (p) { return String(partial.year) === p[0]; })) {
+      host.appendChild(el("p", "fine", "* " + partial.year + "년은 " + partial.through_month +
+        "월까지의 허가분만 집계되어 다른 해와 직접 비교할 수 없습니다(빗금 막대)."));
+    }
+  }
+
+  function hbarChart(host, pairs, title) {
+    chartHead(host, title);
+    if (!pairs.length) { host.appendChild(el("p", "muted", "데이터 없음")); return; }
+    var W = widthOf(host), max = pairs[0][1] || 1;
+    var valW = textWidth(fmt(max)) + 10;
+    var longest = Math.max.apply(null, pairs.map(function (p) { return textWidth(p[0]); }));
+    // 이름 칸은 실제 이름 폭에 맞추되 최대 40%. 그보다 좁은 화면에서는 이름을 막대 위에 둔다.
+    var stacked = W < 560 && longest > W * 0.4;
+    var rowH = stacked ? 46 : 28, L = stacked ? 0 : Math.min(Math.ceil(longest) + 12, W * 0.4);
+    var H = pairs.length * rowH + 6;
+    var svg = newSvg(W, H, title);
+    pairs.forEach(function (p, i) {
+      var y0 = i * rowH + 4;
+      var barY = stacked ? y0 + 20 : y0 + 5, barH = stacked ? 16 : 18;
+      var w = (W - L - valW) * (p[1] / max);
+      var name = stacked ? ellipsize(p[0], W - 4) : ellipsize(p[0], L - 10);
+      svg.appendChild(stacked ? svgText(0, y0 + 14, name, "start", { fill: "#16202e" })
+                              : svgText(L - 8, barY + 14, name, "end"));
+      var r = svgEl("rect", { x: L, y: barY, width: Math.max(w, 1), height: barH,
                               fill: PALETTE[0], rx: 2 });
       var ttl = svgEl("title"); ttl.textContent = p[0] + ": " + fmt(p[1]) + "건";
       r.appendChild(ttl);
       svg.appendChild(r);
-      if (pairs.length <= 30 && (i % Math.ceil(pairs.length / 14) === 0)) {
-        svg.appendChild(svgText(x + bw / 2, H - P.b + 14, p[0]));
-      }
-    });
-    svg.appendChild(svgEl("line", { x1: P.l, y1: H - P.b, x2: W - P.r, y2: H - P.b, stroke: "#d7dce4" }));
-    svg.appendChild(svgText(P.l - 6, P.t + 10, fmt(max), "end"));
-    host.appendChild(svg);
-  }
-
-  function hbarChart(host, pairs, title) {
-    clear(host);
-    host.appendChild(el("h3", null, title));
-    if (!pairs.length) { host.appendChild(el("p", "muted", "데이터 없음")); return; }
-    var rowH = 22, W = 640, H = pairs.length * rowH + 16, L = 190;
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
-    var max = pairs[0][1] || 1;
-    pairs.forEach(function (p, i) {
-      var y = i * rowH + 8;
-      var w = (W - L - 60) * (p[1] / max);
-      svg.appendChild(svgText(L - 8, y + 12, p[0].length > 22 ? p[0].slice(0, 21) + "…" : p[0], "end"));
-      var r = svgEl("rect", { x: L, y: y + 2, width: Math.max(w, 1), height: rowH - 8,
-                              fill: PALETTE[1], rx: 2 });
-      var ttl = svgEl("title"); ttl.textContent = p[0] + ": " + fmt(p[1]) + "건";
-      r.appendChild(ttl);
-      svg.appendChild(r);
-      svg.appendChild(svgText(L + w + 6, y + 12, fmt(p[1]), "start"));
+      svg.appendChild(svgText(L + w + 6, barY + 14, fmt(p[1]), "start"));
     });
     host.appendChild(svg);
   }
 
-  function donut(host, pairs, title) {
+  /* 품목 상태: 그래프 대신 건수·비율 */
+  function statusCards(host, pairs, title) {
     clear(host);
+    if (!pairs.length) return;
     host.appendChild(el("h3", null, title));
-    var total = pairs.reduce(function (a, p) { return a + p[1]; }, 0);
-    if (!total) { host.appendChild(el("p", "muted", "데이터 없음")); return; }
-    var S = 220, R = 92, r0 = 52, cx = S / 2, cy = S / 2, a0 = -Math.PI / 2;
-    var svg = svgEl("svg", { viewBox: "0 0 " + S + " " + S, role: "img" });
-    pairs.forEach(function (p, i) {
-      var a1 = a0 + (p[1] / total) * Math.PI * 2;
-      var large = (a1 - a0) > Math.PI ? 1 : 0;
-      var d = ["M", cx + R * Math.cos(a0), cy + R * Math.sin(a0),
-               "A", R, R, 0, large, 1, cx + R * Math.cos(a1), cy + R * Math.sin(a1),
-               "L", cx + r0 * Math.cos(a1), cy + r0 * Math.sin(a1),
-               "A", r0, r0, 0, large, 0, cx + r0 * Math.cos(a0), cy + r0 * Math.sin(a0), "Z"].join(" ");
-      var path = svgEl("path", { d: d, fill: PALETTE[i % PALETTE.length], stroke: "#fff", "stroke-width": 1.5 });
-      var ttl = svgEl("title");
-      ttl.textContent = p[0] + ": " + fmt(p[1]) + "건 (" + (p[1] / total * 100).toFixed(1) + "%)";
-      path.appendChild(ttl);
-      svg.appendChild(path);
-      a0 = a1;
+    var total = pairs.reduce(function (a, p) { return a + p[1]; }, 0) || 1;
+    var box = el("div", "kpis status");
+    pairs.forEach(function (p) {
+      var d = el("div", "kpi" + (p[0] === "정상" ? "" : " alt"));
+      var n = el("div", "n", fmt(p[1])); n.appendChild(el("span", "u", "건"));
+      d.appendChild(n);
+      d.appendChild(el("div", "l", p[0] + " · " + (p[1] / total * 100).toFixed(1) + "%"));
+      box.appendChild(d);
     });
-    host.appendChild(svg);
-    var lg = el("div", "legend");
-    pairs.forEach(function (p, i) {
-      var it = el("span", "lgi");
-      var sw = el("i"); sw.style.background = PALETTE[i % PALETTE.length];
-      it.appendChild(sw);
-      it.appendChild(el("span", null, p[0] + " " + (p[1] / total * 100).toFixed(1) + "%"));
-      lg.appendChild(it);
-    });
-    host.appendChild(lg);
+    host.appendChild(box);
   }
 
   /* ---------- 집계 ---------- */
@@ -342,18 +408,22 @@
     if (state.page >= pages) state.page = pages - 1;
     var slice = sorted.slice(state.page * PAGE, (state.page + 1) * PAGE);
 
-    var tbl = el("table");
+    var tbl = el("table", "data");
     var thead = el("thead"), trh = el("tr");
-    COLS.forEach(function (c) { trh.appendChild(el("th", null, c)); });
+    COLS.forEach(function (c) {
+      var th = el("th", NOWRAP[c] ? "nw" : null, c); th.scope = "col"; trh.appendChild(th);
+    });
     thead.appendChild(trh); tbl.appendChild(thead);
     var tb = el("tbody");
     slice.forEach(function (i) {
       var tr = el("tr");
-      COLS.forEach(function (c) { tr.appendChild(el("td", null, D.col[c][i] || "")); });
+      COLS.forEach(function (c) { tr.appendChild(el("td", NOWRAP[c] ? "nw" : null, cell(c, D.col[c][i]))); });
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
     var scroll = el("div", "scroll"); scroll.appendChild(tbl);
+    scroll.tabIndex = 0; scroll.setAttribute("role", "region");
+    scroll.setAttribute("aria-label", "허가 목록 표 (가로로 스크롤)");
     host.appendChild(scroll);
 
     var nav = el("div", "pager");
@@ -414,10 +484,9 @@
       kp.appendChild(kpi(peak[0], "최다 허가 연도 (" + fmt(peak[1]) + "건)"));
     }
 
-    barChart($("chart-year"), ys, "연도별 허가 건수");
-    if (D.col["품목상태"]) donut($("chart-status"), countBy(idx, "품목상태"), "품목 상태");
-    else if (D.col["제조수입구분"]) donut($("chart-status"), countBy(idx, "제조수입구분"), "제조 · 수입");
-    if (D.col["업체명"]) hbarChart($("chart-company"), comps.slice(0, 12), "업체별 허가 건수 (상위 12)");
+    last = { ys: ys, comps: comps };
+    drawCharts();
+    if (D.col["품목상태"]) statusCards($("chart-status"), countBy(idx, "품목상태"), "품목 상태");
     renderTable(idx);
 
     var st = $("status"); clear(st);
@@ -426,6 +495,21 @@
       (performance.now() - t0).toFixed(0) + "ms" +
       (D.meta.truncated ? " · 원본 " + fmt(D.meta.total_all) + "건 중 최신분만 수록" : "")));
   }
+
+  /* 차트는 폭에 맞춰 그리므로, 창 크기·화면 회전 시 다시 그린다(집계는 재사용). */
+  var last = null, rafId = 0, lastW = 0;
+  function drawCharts() {
+    if (!last) return;
+    barChart($("chart-year"), last.ys, "연도별 허가 건수", D.meta.partial_year);
+    if (D.col["업체명"]) hbarChart($("chart-company"), last.comps.slice(0, 12), "업체별 허가 건수 (상위 12)");
+    lastW = $("chart-year").clientWidth;
+  }
+  window.addEventListener("resize", function () {
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(function () {
+      if ($("chart-year").clientWidth !== lastW) drawCharts();
+    });
+  });
 
   document.addEventListener("DOMContentLoaded", load);
 })();

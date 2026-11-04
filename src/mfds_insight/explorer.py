@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from .config import Settings
+from .config import Settings, now_kst, stamp_kst
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
                     "explorer.max_rows 를 조정하거나 리포트 범위를 좁히십시오.", max_rows, len(df))
 
     payload = {
-        "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generated": stamp_kst(),
         "total_all": int(len(df)),
         "truncated": bool(len(work) < len(df)),
         "columns": cols,
@@ -56,6 +55,11 @@ def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
         "year_column": "_연도" if "_연도" in work.columns else None,
         "encoded": {c: _encode_column(work[c]) for c in cols},
     }
+    # 집계 중인 해(리포트와 같은 규칙). 탐색기 연도 차트에 빗금·주석으로 표시한다.
+    if "_허가일" in work.columns and work["_허가일"].notna().any():
+        last = work["_허가일"].max()
+        if last.year >= now_kst().year and last.month < 12:
+            payload["partial_year"] = {"year": int(last.year), "through_month": int(last.month)}
     if payload["year_column"]:
         years = work["_연도"]
         payload["encoded"]["_연도"] = {
