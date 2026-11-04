@@ -30,7 +30,36 @@ def _encode_column(series: pd.Series) -> dict:
     return {"kind": "raw", "data": values.tolist()}
 
 
-def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
+def scope_frame(df: pd.DataFrame, settings: Settings) -> tuple[pd.DataFrame, dict]:
+    """탐색기에 실을 행을 고른다.
+
+    scope = "reports"(기본): [[report]] 들이 선택하는 행의 합집합. 리포트와 똑같은
+    select() 규칙을 쓰므로 탐색기 수치와 리포트 수치가 어긋나지 않는다.
+    scope = "all": 전체 데이터.
+    """
+    from .pipeline import select
+
+    scope = str(settings.explorer.get("scope", "reports")).lower()
+    if scope not in ("reports", "all"):
+        raise ValueError(f"explorer.scope 는 'reports' 또는 'all' 이어야 합니다: {scope!r}")
+    if scope == "all":
+        return df, {"kind": "all", "titles": [], "source_total": int(len(df))}
+    rid = "__rid"
+    tagged = df.assign(**{rid: range(len(df))})
+    keep: set[int] = set()
+    titles: list[str] = []
+    for report in settings.reports:
+        hit = select(tagged, report)
+        if len(hit):
+            keep.update(int(x) for x in hit[rid])
+            titles.append(str(report.get("title", report.get("id", ""))))
+    out = df.iloc[sorted(keep)].reset_index(drop=True)
+    log.info("탐색기 수록 범위: 리포트 대상 품목 %d행 (전체 %d행 중)", len(out), len(df))
+    return out, {"kind": "reports", "titles": titles, "source_total": int(len(df))}
+
+
+def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path,
+                  scope: dict | None = None) -> dict:
     cfg = settings.explorer
     cols = [c for c in cfg.get("columns", []) if c in df.columns]
     if not cols:
@@ -50,9 +79,11 @@ def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
         "generated": stamp_kst(),
         "total_all": int(len(df)),
         "truncated": bool(len(work) < len(df)),
+        "scope": scope or {"kind": "all", "titles": [], "source_total": int(len(df))},
         "columns": cols,
         "facets": [c for c in cfg.get("facet_columns", []) if c in cols],
         "search": [c for c in cfg.get("search_columns", []) if c in cols],
+        "merge_spacing": [c for c in cfg.get("merge_spacing_columns", []) if c in cols],
         "year_column": "_연도" if "_연도" in work.columns else None,
         # 색상 체계(리포트와 동일 설정). rainbow 는 explorer.js 가 같은 알고리즘으로 생성한다.
         "colors": {"scheme": scheme_of(settings),
@@ -80,7 +111,8 @@ def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
     if size_mb > 8:
         log.warning("데이터가 %.1f MB 로 큽니다. 모바일 접속이 느려질 수 있습니다. "
                     "explorer.max_rows 를 줄이거나 컬럼을 줄이십시오.", size_mb)
-    return {"rows": int(len(work)), "size_mb": round(size_mb, 2)}
+    return {"rows": int(len(work)), "size_mb": round(size_mb, 2),
+            "scope": payload["scope"]}
 
 
 def copy_assets(settings: Settings, outdir: Path) -> None:

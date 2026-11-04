@@ -5,6 +5,11 @@
 <h1>대화형 허가데이터 탐색기</h1>
 <p class="lede">품목·업체·상태·연도를 바꿔가며 즉시 집계됩니다. 데이터는 처음 한 번만 내려받고,
 이후 모든 계산은 브라우저에서 처리되므로 서버로 아무것도 전송되지 않습니다.</p>
+{% if info.scope and info.scope.kind == "reports" %}
+<p class="note"><strong>수록 범위</strong> · 이 사이트의 리포트 대상 품목만 수록합니다:
+{{ info.scope.titles | join(", ") }}. 전체 품목허가 {{ "{:,}".format(info.scope.source_total) }}건 중
+{{ "{:,}".format(info.rows) }}건이며, 리포트와 같은 기준(품목명 정확 일치)으로 골랐습니다.</p>
+{% endif %}
 
 <div id="status" class="statusbar">데이터를 불러오는 중입니다…</div>
 

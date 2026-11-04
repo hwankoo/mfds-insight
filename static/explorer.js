@@ -121,11 +121,17 @@
   }
 
   /* ---------- 필터 UI ---------- */
+  /* 필터 키: merge_spacing 컬럼은 띄어쓰기를 지워 같은 품목으로 묶는다(표 표시는 원본). */
+  var MERGE = {};
+  function fkey(col, v) {
+    v = v || "(없음)";
+    return MERGE[col] ? v.replace(/\s+/g, "") : v;
+  }
   function uniqueSorted(col) {
     var seen = Object.create(null), out = [];
     var a = D.col[col];
     for (var i = 0; i < a.length; i++) {
-      var v = a[i] || "(없음)";
+      var v = fkey(col, a[i]);
       if (!seen[v]) { seen[v] = 1; out.push(v); }
     }
     return out.sort(function (x, y) { return x.localeCompare(y, "ko"); });
@@ -133,6 +139,7 @@
 
   function init() {
     var m = D.meta;
+    (m.merge_spacing || []).forEach(function (c) { MERGE[c] = 1; });
     var host = $("filters");
     clear(host);
 
@@ -260,7 +267,7 @@
     for (var i = 0; i < N; i++) {
       var ok = true;
       for (var f = 0; f < facets.length && ok; f++) {
-        var v = D.col[facets[f][0]][i] || "(없음)";
+        var v = fkey(facets[f][0], D.col[facets[f][0]][i]);
         if (facets[f][1].indexOf(v) < 0) ok = false;
       }
       if (ok && years && years[i]) {

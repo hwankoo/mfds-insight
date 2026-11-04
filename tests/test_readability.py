@@ -110,3 +110,45 @@ def test_hbar_height_grows_with_items(settings, tmp_path):
         return float(re.search(r'height="([\d.]+)pt"', path.read_text(encoding="utf-8")).group(1))
     for key in ("lg", "sm"):
         assert height(24, key) > height(12, key) * 1.8
+
+
+# ── 탐색기 수록 범위 ───────────────────────────────────
+def test_explorer_scope_reports_only(settings):
+    import json
+    names = ["치과용임플란트고정체", "치과용임플란트기공재료", "치과용임플란트상부구조물", "개인용온열기"]
+    recs = [rec(i, name=names[i % 4]) for i in range(400)]
+    p.save_cache(p.normalize(recs, settings), settings)
+    cli._build(settings)
+    data = json.loads((settings.output_dir / "explore" / "data.json").read_text(encoding="utf-8"))
+    enc = data["encoded"]["품목명"]
+    shown = set(enc["dict"]) if enc["kind"] == "dict" else set(enc["data"])
+    assert shown == {"치과용임플란트고정체", "치과용임플란트상부구조물"}
+    assert data["scope"]["kind"] == "reports" and data["scope"]["source_total"] == 400
+    assert not data["truncated"]
+    html = (settings.output_dir / "explore" / "index.html").read_text(encoding="utf-8")
+    assert "수록 범위" in html and "전체 품목허가 400건 중" in html
+
+
+def test_explorer_scope_all(settings):
+    from dataclasses import replace
+    from mfds_insight.explorer import scope_frame
+    df = p.normalize([rec(i, name="개인용온열기") for i in range(5)], settings)
+    s = replace(settings, explorer=dict(settings.explorer, scope="all"))
+    out, scope = scope_frame(df, s)
+    assert len(out) == 5 and scope["kind"] == "all"
+
+
+def test_report_page_states_scope(built):
+    html = (built / "index.html").read_text(encoding="utf-8")
+    assert "집계 기준 · 품목명" in html and "「치과용임플란트고정체」" in html and "정확히 일치" in html
+
+
+def test_explorer_merge_spacing_flag(settings):
+    import json
+    recs = [rec(i, name="치과용 임플란트 고정체" if i % 2 else "치과용임플란트고정체") for i in range(20)]
+    p.save_cache(p.normalize(recs, settings), settings)
+    cli._build(settings)
+    data = json.loads((settings.output_dir / "explore" / "data.json").read_text(encoding="utf-8"))
+    assert data["merge_spacing"] == ["품목명"]
+    js = (settings.output_dir / "explore" / "explorer.js").read_text(encoding="utf-8")
+    assert "function fkey" in js

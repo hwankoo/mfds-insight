@@ -173,10 +173,11 @@ def _build(settings, cache: str = "raw") -> None:
 
     explorer_info = None
     if settings.explorer.get("enabled", False):
-        from .explorer import build_dataset, copy_assets
+        from .explorer import build_dataset, copy_assets, scope_frame
         from .render import render_explorer
         edir = out / settings.explorer.get("slug", "explore")
-        explorer_info = build_dataset(df, settings, edir)
+        edf, scope = scope_frame(df, settings)
+        explorer_info = build_dataset(edf, settings, edir, scope)
         copy_assets(settings, edir)
         render_explorer(settings, edir, explorer_info)
 
