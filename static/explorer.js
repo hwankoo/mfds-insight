@@ -8,7 +8,56 @@
   var COLS = [];
   var state = { facets: {}, q: "", y0: null, y1: null, sortDesc: true, page: 0 };
   var PAGE = 50;
-  var PALETTE = ["#1F3864", "#C2570C", "#2F7D5B", "#7B4FA6", "#3D6FB6", "#8A6D1F"];  // 흰 배경 대비 4.5:1 이상
+  /* 무지개 색상 — src/mfds_insight/colors.py 와 같은 알고리즘(값을 바꾸면 양쪽 모두 수정).
+     빨→보라 7색을 기준점으로 n등분하고, 흰 배경 대비 3.2:1 이상이 될 때까지 명도를 낮춘다. */
+  var ANCHOR_HUES = [0, 28, 48, 130, 205, 235, 280], SAT = 0.68, L0 = 0.50, MIN_CONTRAST = 3.2;
+  function hlsToRgb(h, l, s) {                        // Python colorsys.hls_to_rgb 와 동일
+    if (s === 0) return [l, l, l];
+    var m2 = l <= 0.5 ? l * (1 + s) : l + s - l * s, m1 = 2 * l - m2;
+    function v(hh) {
+      hh = ((hh % 1) + 1) % 1;
+      if (hh < 1 / 6) return m1 + (m2 - m1) * hh * 6;
+      if (hh < 0.5) return m2;
+      if (hh < 2 / 3) return m1 + (m2 - m1) * (2 / 3 - hh) * 6;
+      return m1;
+    }
+    return [v(h + 1 / 3), v(h), v(h - 1 / 3)];
+  }
+  function toHex(rgb) {
+    return "#" + rgb.map(function (x) {
+      var n = Math.round(x * 255);
+      return (n < 16 ? "0" : "") + n.toString(16).toUpperCase();
+    }).join("");
+  }
+  function contrastOnWhite(hex) {
+    var c = [1, 3, 5].map(function (i) { return parseInt(hex.substr(i, 2), 16) / 255; })
+      .map(function (x) { return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+    return 1.05 / (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] + 0.05);
+  }
+  function hueAt(t) {
+    var x = t * (ANCHOR_HUES.length - 1), i = Math.min(Math.floor(x), ANCHOR_HUES.length - 2), f = x - i;
+    return ANCHOR_HUES[i] + (ANCHOR_HUES[i + 1] - ANCHOR_HUES[i]) * f;
+  }
+  function rainbow(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var h = hueAt(n > 1 ? i / (n - 1) : 0) / 360, hx, steps = 0;
+      while (true) {
+        hx = toHex(hlsToRgb(h, L0 - steps * 0.005, SAT));
+        if (contrastOnWhite(hx) >= MIN_CONTRAST || steps >= 60) break;
+        steps++;
+      }
+      out.push(hx);
+    }
+    return out;
+  }
+  function seriesColors(n) {                       // colors.series_colors 와 동일
+    var c = D && D.meta.colors;
+    if (c && c.scheme === "palette" && c.palette && c.palette.length) {
+      var out = []; for (var i = 0; i < n; i++) out.push(c.palette[i % c.palette.length]); return out;
+    }
+    return rainbow(n);
+  }
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -229,7 +278,7 @@
      viewBox 를 실제 표시 폭(px)과 같게 잡아 1:1 로 그린다. 그래서 화면이 좁아도
      글자가 축소되지 않는다(FONT px 고정). 폭이 바뀌면 다시 그린다(onResize). */
   var SVGNS = "http://www.w3.org/2000/svg";
-  var FONT = 13, INK = "#2b3440", GRID = "#e2e6ec", PARTIAL = "#7489AE";
+  var FONT = 13, INK = "#2b3440", GRID = "#e2e6ec";
   var measureCtx = null;
   function textWidth(str) {
     if (!measureCtx) {
@@ -289,11 +338,7 @@
     var ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
     var P = { l: Math.ceil(textWidth(fmt(top))) + 12, r: 8, t: 10, b: 28 };
     var svg = newSvg(W, H, title);
-    var defs = svgEl("defs"), pat = svgEl("pattern", { id: "hatch", width: 6, height: 6,
-      patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
-    pat.appendChild(svgEl("rect", { width: 6, height: 6, fill: PARTIAL }));
-    pat.appendChild(svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "#fff", "stroke-width": 2 }));
-    defs.appendChild(pat); svg.appendChild(defs);
+    var colors = seriesColors(pairs.length);
     var ih = H - P.t - P.b, iw = W - P.l - P.r;
     ticks.forEach(function (t) {
       var y = H - P.b - ih * (t / top);
@@ -307,9 +352,17 @@
     pairs.forEach(function (p, i) {
       var isPartial = partial && String(partial.year) === p[0];
       var h = ih * (p[1] / top), x = P.l + i * bw, y = H - P.b - h;
+      var fill = colors[i];
+      if (isPartial) {                               // 같은 색 + 흰 빗금(색 외 구분 수단)
+        var defs = svgEl("defs"), pat = svgEl("pattern", { id: "hatch", width: 6, height: 6,
+          patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+        pat.appendChild(svgEl("rect", { width: 6, height: 6, fill: colors[i], "fill-opacity": 0.85 }));
+        pat.appendChild(svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "#fff", "stroke-width": 2 }));
+        defs.appendChild(pat); svg.appendChild(defs);
+        fill = "url(#hatch)";
+      }
       var r = svgEl("rect", { x: x + bw * 0.14, y: y, width: Math.max(bw * 0.72, 1),
-                              height: Math.max(h, 1), rx: 2,
-                              fill: isPartial ? "url(#hatch)" : PALETTE[0] });
+                              height: Math.max(h, 1), rx: 2, fill: fill });
       var ttl = svgEl("title");
       ttl.textContent = p[0] + "년: " + fmt(p[1]) + "건" +
         (isPartial ? " (" + partial.through_month + "월까지 집계)" : "");
@@ -337,7 +390,7 @@
     var stacked = W < 560 && longest > W * 0.4;
     var rowH = stacked ? 46 : 28, L = stacked ? 0 : Math.min(Math.ceil(longest) + 12, W * 0.4);
     var H = pairs.length * rowH + 6;
-    var svg = newSvg(W, H, title);
+    var svg = newSvg(W, H, title), colors = seriesColors(pairs.length);
     pairs.forEach(function (p, i) {
       var y0 = i * rowH + 4;
       var barY = stacked ? y0 + 20 : y0 + 5, barH = stacked ? 16 : 18;
@@ -346,7 +399,7 @@
       svg.appendChild(stacked ? svgText(0, y0 + 14, name, "start", { fill: "#16202e" })
                               : svgText(L - 8, barY + 14, name, "end"));
       var r = svgEl("rect", { x: L, y: barY, width: Math.max(w, 1), height: barH,
-                              fill: PALETTE[0], rx: 2 });
+                              fill: colors[i], rx: 2 });
       var ttl = svgEl("title"); ttl.textContent = p[0] + ": " + fmt(p[1]) + "건";
       r.appendChild(ttl);
       svg.appendChild(r);

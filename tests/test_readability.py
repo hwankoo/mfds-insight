@@ -37,7 +37,7 @@ def test_effective_font_at_least_12px(key, shown_px):
 
 
 def test_palette_contrast(settings):
-    for c in list(settings.chart["palette"]) + [render.PARTIAL_COLOR]:
+    for c in settings.chart["palette"]:
         assert contrast(c) >= 3.0, c
 
 

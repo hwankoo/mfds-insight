@@ -21,6 +21,7 @@ from matplotlib import font_manager
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from jinja2 import Environment, FileSystemLoader
 
+from .colors import series_colors
 from .config import Settings, stamp_kst
 
 log = logging.getLogger(__name__)
@@ -61,7 +62,6 @@ VARIANTS = {
     "sm": {"suffix": "_sm", "width_in": 4.2, "font_pt": 11.5, "bar_h_in": 3.4,
            "row_in": 0.50, "max_xlabels": 6,  "name_chars": 15, "name_lines": 2},
 }
-PARTIAL_COLOR = "#7489AE"   # 집계 중인 해(흰 배경 대비 3.5:1) + 빗금으로 색 외 구분
 
 
 def _variant(settings: Settings, key: str) -> dict:
@@ -104,16 +104,17 @@ def _shorten(name: str, chars: int, lines: int) -> str:
     return "\n".join(parts)
 
 
-def _year_chart(stats: dict, settings: Settings, v: dict, palette: list, path: Path) -> str:
+def _year_chart(stats: dict, settings: Settings, v: dict, path: Path) -> str:
     data = stats["yearly_trend"]
     years, counts = list(data.keys()), list(data.values())
     partial = (stats.get("partial_year") or {}).get("year")
     fig, ax = _fig(settings, v, v["bar_h_in"])
-    colors = [PARTIAL_COLOR if y == partial else palette[0] for y in years]
+    # 연도 순서대로 무지개 그라데이션. 집계 중인 해는 같은 색에 흰 빗금(색 외 구분 수단).
+    colors = series_colors(settings, len(years))
     bars = ax.bar(years, counts, color=colors, width=0.72)
     for b, y in zip(bars, years):
         if y == partial:
-            b.set_hatch("///"); b.set_edgecolor("white"); b.set_linewidth(0)
+            b.set_hatch("///"); b.set_edgecolor("white"); b.set_linewidth(0); b.set_alpha(0.85)
     step = next(k for k in (1, 2, 5, 10, 20, 50) if len(years) / k <= v["max_xlabels"])
     ticks = [y for y in years if y % step == 0] or years[:1]
     ax.set_xticks(ticks, [f"{t}*" if t == partial else str(t) for t in ticks])
@@ -179,19 +180,19 @@ def draw_charts(stats: dict, settings: Settings, outdir: Path, wanted: list[str]
     status_mix 는 그래프 대신 템플릿에서 숫자로 표시하므로 여기서 그리지 않는다.
     """
     _ensure_font(settings)
-    palette = list(settings.chart["palette"])
     made: dict[str, dict] = {}
 
     jobs = []
     if "yearly_trend" in wanted and stats.get("yearly_trend"):
-        jobs.append(("yearly_trend", lambda v, p: _year_chart(stats, settings, v, palette, p)))
+        jobs.append(("yearly_trend", lambda v, p: _year_chart(stats, settings, v, p)))
     if "top_companies" in wanted and stats.get("top_companies"):
         jobs.append(("top_companies", lambda v, p: _hbar_chart(
-            stats["top_companies"], settings, v, palette[0], p)))
+            stats["top_companies"], settings, v,
+            series_colors(settings, len(stats["top_companies"])), p)))
     for key in ("domestic_vs_import", "grade_mix"):
         if key in wanted and stats.get(key):
             jobs.append((key, lambda v, p, k=key: _hbar_chart(
-                stats[k], settings, v, palette, p, show_pct=True)))
+                stats[k], settings, v, series_colors(settings, len(stats[k])), p, show_pct=True)))
 
     for name, fn in jobs:
         made[name] = {}
