@@ -1,4 +1,4 @@
-# MFDS Insight
+<!-- # MFDS Insight
 
 > **처음 사용하신다면 `시작하기.txt` 를 먼저 읽으신 뒤 `setup.bat` 을 실행하십시오.**
 > 명령을 직접 입력하지 않아도 `menu.bat` 으로 모든 기능을 쓸 수 있습니다.
@@ -301,3 +301,4 @@ python run.py build
 
 [SECURITY.md](SECURITY.md) 를 반드시 읽어보십시오. 특히 **게시 허용 필드(allowlist)** 와
 **재직 중 겸업·영업비밀 분리** 항목을 확인하시기 바랍니다.
+ -->
