@@ -126,12 +126,26 @@ chmod 600 .env
 python run.py check                # 설정·보안 점검 (배포 전 항상 실행)
 python run.py dump --sample 300    # 원본 300건을 가공 없이 JSON/CSV 로 저장 (점검용)
 python run.py probe                # API 응답 구조 확인 → 필드 매핑용
-python run.py fetch --sample 300   # 소량 시험 수집
+python run.py fetch --sample 300   # 소량 시험 수집 → cache/sample (정식 캐시 raw 는 유지)
+python run.py build --cache sample # 시험 수집분으로 미리보기 사이트 생성 (전 페이지에 미리보기 표시)
 python run.py fetch                # 전체 수집 → cache/
 python run.py build                # 캐시 → output/ 정적 사이트 생성
 python run.py run                  # fetch + build
 python run.py serve                # 로컬 서버로 결과 확인 (--port 로 번호 변경)
 ```
+
+### 수집 완전성 검사
+
+정식 `fetch`(또는 `run`)는 다음 중 하나라도 해당하면 **캐시를 갱신하지 않고 실패로 끝납니다.**
+이전 캐시는 그대로 남으므로, 불완전한 데이터가 게시되지 않습니다.
+
+- 응답의 totalCount 보다 수집 건수가 적음
+- `api.max_pages` 상한에서 중단됨
+- 직전 정식 수집 대비 건수가 `api.max_row_drop_pct`(기본 5%) 넘게 감소
+- 응답 본문의 `header.resultCode` 가 00(정상)·03(데이터 없음)이 아님
+
+원인을 확인하고 의도한 결과라면 `--allow-incomplete` 로 강제할 수 있습니다.
+이 경우 위반 사유가 `cache/raw.meta.json` 의 `integrity_override` 에 기록됩니다.
 
 > **탐색기는 반드시 `serve` 로 여십시오.** `output\index.html` 을 더블클릭해
 > `file://` 로 열면 브라우저가 로컬 파일의 `fetch` 를 차단해 데이터를 읽지 못합니다.
@@ -242,6 +256,15 @@ filters  = { "등급" = ["3등급", "4등급"] }
 charts   = ["yearly_trend", "grade_mix", "top_companies"]
 summary  = "체외진단 품목의 허가 추이입니다."
 ```
+
+키워드 비교 방식
+- `match = "contains"`(기본): 품목명에 키워드가 **포함**되면 선택합니다. 공백은 무시합니다.
+- `match = "exact"`: 품목명이 키워드와 **정확히 같을 때만** 선택합니다.
+- `exclude = [...]`: 품목명에 이 문자열이 포함되면 제외합니다.
+
+부분일치에서는 `"치과용임플란트"` 가 `"치과용임플란트상부구조물"` 까지 잡습니다.
+품목 단위 리포트는 `exact` 나 `exclude` 로 범위를 명시해야 다른 리포트와 중복 집계되지 않습니다.
+`build` 로그의 `포함된 품목명 상위` 줄에서 실제로 잡힌 품목을 확인하십시오.
 
 `python run.py build` 만 다시 실행하면 새 페이지가 생성되고 목차에도 자동 반영됩니다.
 

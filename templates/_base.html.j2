@@ -47,7 +47,7 @@
   <a class="t" href="{{ site.base_url | default('') }}/">{{ site.title }}</a>
   <div class="s">{{ site.subtitle }}</div>
 </div></header>
-<main class="wrap">{% block content %}{% endblock %}</main>
+<main class="wrap">{% if site.notice %}<p class="note" role="alert">{{ site.notice }}</p>{% endif %}{% block content %}{% endblock %}</main>
 <footer><div class="wrap">
   <p>{{ site.attribution }}</p>
   <p>본 자료는 공개된 허가 정보를 재가공한 참고 자료이며, 법적 효력이 있는 규제 해석이 아닙니다.

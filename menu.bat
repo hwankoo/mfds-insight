@@ -14,7 +14,7 @@ echo.
 echo    1. 설정 점검             check
 echo    2. 응답 구조 확인         probe
 echo    3. 원본 300건 내려받기     dump
-echo    4. 시험 수집 2000건       fetch --sample 2000
+echo    4. 시험 수집+미리보기     run --sample 2000
 echo    5. 전체 수집              fetch
 echo    6. 사이트 생성            build
 echo    7. 브라우저로 확인         serve
@@ -51,7 +51,8 @@ start "" explorer.exe "%~dp0cache"
 goto back
 
 :c_sample
-%PY% run.py fetch --sample 2000
+rem 시험 수집분은 cache\sample 에 저장되어 정식 캐시(raw)를 덮어쓰지 않습니다.
+%PY% run.py run --sample 2000
 goto back
 
 :c_fetch

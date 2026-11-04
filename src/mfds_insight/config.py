@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import logging
-from urllib.parse import unquote
+from urllib.parse import quote, quote_plus, unquote
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,9 +82,22 @@ class Settings:
         return bool(self._api_key)
 
     def mask(self, text: str) -> str:
-        """로그·예외 메시지에 키가 섞여 나가는 것을 막는다."""
-        if self._api_key and self._api_key in text:
-            return text.replace(self._api_key, "***REDACTED***")
+        """로그·예외 메시지에 키가 섞여 나가는 것을 막는다.
+
+        requests 는 쿼리 파라미터를 URL 인코딩하므로, 연결 오류 메시지에는
+        원문이 아니라 인코딩된 키(예: '+' → '%2B')가 담긴다. 원문과
+        인코딩 형태(quote_plus / quote)를 모두 치환한다. 긴 형태부터 치환해
+        부분 치환으로 일부가 남는 일을 막는다.
+        """
+        if not self._api_key or not text:
+            return text
+        forms = {self._api_key, quote_plus(self._api_key), quote(self._api_key, safe="")}
+        for form in sorted(forms, key=len, reverse=True):
+            if form:
+                text = text.replace(form, "***REDACTED***")
+                # 퍼센트 인코딩의 대소문자 변형(%2b 등)도 차단
+                if "%" in form:
+                    text = re.sub(re.escape(form), "***REDACTED***", text, flags=re.IGNORECASE)
         return text
 
     @property
