@@ -169,6 +169,11 @@ def load(root: Path | None = None, config_name: str = "settings.toml") -> Settin
     elif env_ep:
         raw["api"]["endpoint"] = env_ep
 
+    from .colors import SCHEMES
+    scheme = str(raw["chart"].get("scheme", "accent")).lower()
+    if scheme not in SCHEMES:
+        raise ConfigError(f"chart.scheme 은 {', '.join(SCHEMES)} 중 하나여야 합니다: {scheme!r}")
+
     exp = raw.get("explorer", {})
     if exp.get("enabled"):
         extra = set(exp.get("columns", [])) - set(allowed)

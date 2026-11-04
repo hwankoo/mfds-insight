@@ -109,8 +109,8 @@ def _year_chart(stats: dict, settings: Settings, v: dict, path: Path) -> str:
     years, counts = list(data.keys()), list(data.values())
     partial = (stats.get("partial_year") or {}).get("year")
     fig, ax = _fig(settings, v, v["bar_h_in"])
-    # 연도 순서대로 무지개 그라데이션. 집계 중인 해는 같은 색에 흰 빗금(색 외 구분 수단).
-    colors = series_colors(settings, len(years))
+    # 집계 중인 해는 같은 색에 흰 빗금(색 외 구분 수단). 색 체계는 colors.series_colors 참조.
+    colors = series_colors(settings, len(years), kind="single")
     bars = ax.bar(years, counts, color=colors, width=0.72)
     for b, y in zip(bars, years):
         if y == partial:
@@ -188,7 +188,7 @@ def draw_charts(stats: dict, settings: Settings, outdir: Path, wanted: list[str]
     if "top_companies" in wanted and stats.get("top_companies"):
         jobs.append(("top_companies", lambda v, p: _hbar_chart(
             stats["top_companies"], settings, v,
-            series_colors(settings, len(stats["top_companies"])), p)))
+            series_colors(settings, len(stats["top_companies"]), kind="single"), p)))
     for key in ("domestic_vs_import", "grade_mix"):
         if key in wanted and stats.get(key):
             jobs.append((key, lambda v, p, k=key: _hbar_chart(

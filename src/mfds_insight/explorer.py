@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .colors import BASE_COLOR, scheme_of
 from .config import Settings, now_kst, stamp_kst
 
 log = logging.getLogger(__name__)
@@ -54,8 +55,9 @@ def build_dataset(df: pd.DataFrame, settings: Settings, outdir: Path) -> dict:
         "search": [c for c in cfg.get("search_columns", []) if c in cols],
         "year_column": "_연도" if "_연도" in work.columns else None,
         # 색상 체계(리포트와 동일 설정). rainbow 는 explorer.js 가 같은 알고리즘으로 생성한다.
-        "colors": {"scheme": str(settings.chart.get("scheme", "rainbow")).lower(),
-                   "palette": list(settings.chart.get("palette", []))},
+        "colors": {"scheme": scheme_of(settings),
+                   "palette": list(settings.chart.get("palette", [])),
+                   "base": settings.chart.get("base_color", BASE_COLOR)},
         "encoded": {c: _encode_column(work[c]) for c in cols},
     }
     # 집계 중인 해(리포트와 같은 규칙). 탐색기 연도 차트에 빗금·주석으로 표시한다.

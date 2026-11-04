@@ -1,6 +1,14 @@
-"""차트 색상: 무지개(빨·주·노·초·파·남·보) 계열.
+"""차트 색상.
 
-설계 원칙
+색 체계(chart.scheme)
+  accent  (기본) 색은 의미가 있을 때만 쓴다.
+          - 지표가 하나인 차트(연도별·업체별): 기본색 한 가지
+          - 항목 2개(제조·수입 등): 기본색 + 강조색
+          - 항목 3개 이상(등급 등): 색각이상 안전 범주색(Okabe–Ito 기반, 대비 보정)
+  rainbow 빨·주·노·초·파·남·보 계열(아래 rainbow()). 모든 차트에 항목별로 다른 색.
+  palette chart.palette 를 순서대로 순환.
+
+무지개 설계 원칙
   - 색상각(hue)은 무지개 7색을 기준점으로 삼고, 항목이 많으면 그 사이를 보간한다.
     → 항목 수가 몇 개든 같은 차트 안에서 색이 반복되지 않는다.
   - 각 색은 흰 배경 대비 MIN_CONTRAST 이상이 될 때까지 명도를 낮춘다
@@ -56,10 +64,37 @@ def rainbow(n: int) -> list[str]:
     return out
 
 
-def series_colors(settings, n: int) -> list[str]:
-    """차트에 쓸 n개 색. chart.scheme = "rainbow"(기본) | "palette"(설정 팔레트 순환)."""
-    scheme = str(settings.chart.get("scheme", "rainbow")).lower()
+BASE_COLOR = "#1F3864"      # 남색 — 사이트 머리글색과 통일 (흰 배경 대비 11.6:1)
+ACCENT_COLOR = "#C2570C"    # 주황 — 2항목 비교의 두 번째 색, 취소·취하 (4.5:1)
+# Okabe & Ito(2008) 색각이상 안전 팔레트를 흰 배경 대비 3.2:1 이상으로 명도 보정
+CATEGORY_COLORS = ("#0072B2", "#D55E00", "#009E73", "#BD8300", "#CA73A3", "#1D96DB", "#9C920C")
+SCHEMES = ("accent", "rainbow", "palette")
+
+
+def scheme_of(settings) -> str:
+    scheme = str(settings.chart.get("scheme", "accent")).lower()
+    if scheme not in SCHEMES:
+        raise ValueError(f"chart.scheme 은 {', '.join(SCHEMES)} 중 하나여야 합니다: {scheme!r}")
+    return scheme
+
+
+def series_colors(settings, n: int, kind: str = "category") -> list[str]:
+    """차트에 쓸 n개 색.
+
+    kind = "single"   : 지표 하나를 항목별로 나열한 차트(연도별, 업체별)
+           "category" : 서로 다른 범주를 비교하는 차트(제조·수입, 등급)
+    """
+    scheme = scheme_of(settings)
+    if scheme == "rainbow":
+        return rainbow(n)
     if scheme == "palette":
         pal = list(settings.chart["palette"])
         return [pal[i % len(pal)] for i in range(n)]
-    return rainbow(n)
+    # accent
+    base = settings.chart.get("base_color", BASE_COLOR)
+    if kind == "single" or n <= 1:
+        return [base] * n
+    if n == 2:
+        return [base, settings.chart.get("accent_color", ACCENT_COLOR)]
+    cats = list(settings.chart.get("category_colors", CATEGORY_COLORS))
+    return [cats[i % len(cats)] for i in range(n)]

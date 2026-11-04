@@ -1,4 +1,4 @@
-"""무지개 색상: 대비 기준, 반복 없음, Python ↔ JavaScript 결과 일치."""
+"""차트 색상: 기본(accent) 규칙, 무지개 옵션의 대비·반복 없음, Python ↔ JavaScript 일치."""
 from __future__ import annotations
 
 import json
@@ -30,8 +30,32 @@ def test_rainbow_order_red_to_violet():
     assert hues == sorted(hues)
 
 
-def test_settings_palette_matches_rainbow7(settings):
-    assert list(settings.chart["palette"]) == colors.rainbow(7)
+def test_default_scheme_is_accent(settings):
+    assert colors.scheme_of(settings) == "accent"
+
+
+def test_accent_scheme_rules(settings):
+    sc = colors.series_colors
+    assert sc(settings, 26, kind="single") == [colors.BASE_COLOR] * 26     # 연도·업체: 단색
+    assert sc(settings, 2) == [colors.BASE_COLOR, colors.ACCENT_COLOR]      # 제조·수입
+    four = sc(settings, 4)                                                  # 등급 등
+    assert four == list(colors.CATEGORY_COLORS[:4]) and len(set(four)) == 4
+
+
+@pytest.mark.parametrize("c", [colors.BASE_COLOR, colors.ACCENT_COLOR, *colors.CATEGORY_COLORS])
+def test_accent_colors_contrast(c):
+    assert colors.contrast_on_white(c) >= 3.0
+
+
+def test_rainbow_option_still_available(settings):
+    s = replace(settings, chart=dict(settings.chart, scheme="rainbow"))
+    assert colors.series_colors(s, 12, kind="single") == colors.rainbow(12)
+
+
+def test_invalid_scheme(settings):
+    s = replace(settings, chart=dict(settings.chart, scheme="neon"))
+    with pytest.raises(ValueError):
+        colors.series_colors(s, 3)
 
 
 def test_scheme_palette_fallback(settings):

@@ -51,12 +51,17 @@
     }
     return out;
   }
-  function seriesColors(n) {                       // colors.series_colors 와 동일
-    var c = D && D.meta.colors;
-    if (c && c.scheme === "palette" && c.palette && c.palette.length) {
-      var out = []; for (var i = 0; i < n; i++) out.push(c.palette[i % c.palette.length]); return out;
+  // colors.series_colors 와 동일. 탐색기 차트는 모두 지표 하나(연도별·업체별)라 kind="single".
+  function seriesColors(n) {
+    var c = (D && D.meta.colors) || { scheme: "accent", base: "#1F3864" };
+    var out = [], i;
+    if (c.scheme === "rainbow") return rainbow(n);
+    if (c.scheme === "palette" && c.palette && c.palette.length) {
+      for (i = 0; i < n; i++) out.push(c.palette[i % c.palette.length]);
+      return out;
     }
-    return rainbow(n);
+    for (i = 0; i < n; i++) out.push(c.base || "#1F3864");
+    return out;
   }
 
   function $(id) { return document.getElementById(id); }
