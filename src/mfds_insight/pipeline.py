@@ -40,6 +40,19 @@ def _parse_date(value: str) -> pd.Timestamp | None:
         return None
 
 
+def _add_date_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """허가일자 → _허가일(datetime64) / _연도(Int64).
+
+    값이 전부 비거나 형식이 틀려도 dtype 이 datetime64 로 고정되도록
+    to_datetime 을 거친다(object dtype 이면 .dt 접근에서 예외가 난다).
+    """
+    if "허가일자" in df.columns:
+        parsed = df["허가일자"].astype(str).map(_parse_date)
+        df["_허가일"] = pd.to_datetime(parsed, errors="coerce")
+        df["_연도"] = df["_허가일"].dt.year.astype("Int64")
+    return df
+
+
 # ---------------------------------------------------------------------
 def normalize(records: list[dict], settings: Settings) -> pd.DataFrame:
     """원본 레코드 → 표준 컬럼 DataFrame. allowlist 밖 컬럼은 여기서 제거."""
@@ -95,9 +108,7 @@ def normalize(records: list[dict], settings: Settings) -> pd.DataFrame:
             df[col] = ""
     df = df[settings.publish["allowed_columns"]].copy()
 
-    if "허가일자" in df.columns:
-        df["_허가일"] = df["허가일자"].map(_parse_date)
-        df["_연도"] = df["_허가일"].dt.year
+    df = _add_date_columns(df)
 
     before = len(df)
     if "허가번호" in df.columns:
@@ -107,7 +118,17 @@ def normalize(records: list[dict], settings: Settings) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------
-def save_cache(df: pd.DataFrame, settings: Settings, name: str = "raw") -> Path:
+def read_cache_meta(settings: Settings, name: str = "raw") -> dict:
+    """캐시 메타데이터. 없거나 손상되면 빈 dict."""
+    path = settings.cache_dir / f"{name}.meta.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_cache(df: pd.DataFrame, settings: Settings, name: str = "raw",
+               extra_meta: dict | None = None) -> Path:
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     path = settings.cache_dir / f"{name}.parquet"
     try:
@@ -117,15 +138,16 @@ def save_cache(df: pd.DataFrame, settings: Settings, name: str = "raw") -> Path:
         log.info("parquet 저장 불가(%s) → CSV 캐시를 사용합니다.", type(exc).__name__)
         path = settings.cache_dir / f"{name}.csv"
         df.to_csv(path, index=False, encoding="utf-8-sig")
+    # 다른 형식의 옛 캐시가 남아 있으면 load_cache 가 그것을 먼저 읽을 수 있다.
+    for suffix in (".parquet", ".csv"):
+        stale = settings.cache_dir / f"{name}{suffix}"
+        if stale != path:
+            stale.unlink(missing_ok=True)
     meta = settings.cache_dir / f"{name}.meta.json"
-    meta.write_text(
-        json.dumps(
-            {"rows": int(len(df)), "fetched_at": datetime.now(timezone.utc).isoformat(),
-             "columns": list(df.columns)},
-            ensure_ascii=False, indent=2,
-        ),
-        encoding="utf-8",
-    )
+    info = {"rows": int(len(df)), "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "columns": list(df.columns)}
+    info.update(extra_meta or {})
+    meta.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     log.info("캐시 저장: %s (%d행)", path.name, len(df))
     return path
 
@@ -145,35 +167,70 @@ def load_cache(settings: Settings, name: str = "raw") -> pd.DataFrame:
         except Exception as exc:        # pyarrow 없음/손상 → 다음 형식으로 넘어간다
             log.warning("%s 읽기 실패(%s) — 다른 캐시 형식을 찾습니다.", path.name, type(exc).__name__)
             continue
-        if True:
-            if "허가일자" in df.columns:
-                df["_허가일"] = df["허가일자"].astype(str).map(_parse_date)
-                df["_연도"] = df["_허가일"].dt.year
-            log.info("캐시 로드: %s (%d행)", path.name, len(df))
-            return df
-    raise FileNotFoundError(
-        f"캐시가 없습니다: {settings.cache_dir}. 먼저 `fetch` 를 실행하십시오."
-    )
+        df = _add_date_columns(df)
+        log.info("캐시 로드: %s (%d행)", path.name, len(df))
+        return df
+    hint = "먼저 `fetch` 를 실행하십시오."
+    if name == "raw" and any((settings.cache_dir / f"sample{s}").exists() for s in (".parquet", ".csv")):
+        hint += " 시험 수집분만 있다면 `build --cache sample` 로 미리보기를 만들 수 있습니다."
+    raise FileNotFoundError(f"캐시({name})가 없습니다: {settings.cache_dir}. {hint}")
 
 
 # ---------------------------------------------------------------------
 def select(df: pd.DataFrame, report: dict) -> pd.DataFrame:
-    """리포트 정의(keywords, filters)에 따라 부분집합을 고른다."""
+    """리포트 정의(keywords, match, exclude, filters)에 따라 부분집합을 고른다.
+
+    match   = "contains"(기본) — 품목명에 키워드가 포함되면 선택
+              "exact"         — 품목명이 키워드와 정확히 같을 때만 선택
+    exclude = 포함되면 제외할 문자열 목록(match 와 무관하게 부분일치)
+
+    공백은 비교 전에 모두 제거한다("치과용 임플란트" == "치과용임플란트").
+    부분일치에서는 "치과용임플란트" 가 "치과용임플란트상부구조물" 까지 잡으므로,
+    품목 단위 리포트는 exact 또는 exclude 로 범위를 명시해야 중복 집계를 막는다.
+    """
+    def _norm(s: pd.Series) -> pd.Series:
+        return s.astype(str).str.replace(r"\s+", "", regex=True).str.lower()
+
+    def _nk(words) -> list[str]:
+        return [re.sub(r"\s+", "", str(w)).lower() for w in words if str(w).strip()]
+
     out = df
-    keywords = report.get("keywords") or []
+    name_cols = [c for c in ("품목명", "품목분류명") if c in out.columns]
+    keywords = _nk(report.get("keywords") or [])
+    match = str(report.get("match", "contains")).lower()
+    if match not in ("contains", "exact"):
+        raise ValueError(f"[{report.get('id', '?')}] match 는 'contains' 또는 'exact' 여야 합니다: {match!r}")
+
     if keywords:
-        haystack = out.get("품목명", pd.Series("", index=out.index)).astype(str)
-        if "품목분류명" in out.columns:
-            haystack = haystack + " " + out["품목분류명"].astype(str)
-        norm = haystack.str.replace(r"\s+", "", regex=True)
-        pattern = "|".join(re.escape(k.replace(" ", "")) for k in keywords)
-        out = out[norm.str.contains(pattern, case=False, na=False)]
+        hit = pd.Series(False, index=out.index)
+        for col in name_cols:
+            norm = _norm(out[col])
+            if match == "exact":
+                hit |= norm.isin(keywords)
+            else:
+                hit |= norm.str.contains("|".join(map(re.escape, keywords)), regex=True, na=False)
+        out = out[hit]
+
+    excludes = _nk(report.get("exclude") or [])
+    if excludes and name_cols:
+        pattern = "|".join(map(re.escape, excludes))
+        drop = pd.Series(False, index=out.index)
+        for col in name_cols:
+            drop |= _norm(out[col]).str.contains(pattern, regex=True, na=False)
+        if drop.any():
+            log.info("[%s] exclude 로 %d행 제외", report.get("id", "?"), int(drop.sum()))
+        out = out[~drop]
 
     for col, values in (report.get("filters") or {}).items():
         if col in out.columns and values:
             out = out[out[col].isin(list(values))]
 
     log.info("[%s] 대상 %d행", report.get("id", "?"), len(out))
+    if keywords and "품목명" in out.columns and len(out):
+        # 범위 검증용: 실제로 잡힌 품목명 분포를 남긴다(의도치 않은 품목 혼입 확인).
+        top = out["품목명"].astype(str).value_counts().head(10)
+        log.info("[%s] 포함된 품목명 상위: %s", report.get("id", "?"),
+                 ", ".join(f"{k}({v})" for k, v in top.items()))
     return out.reset_index(drop=True)
 
 

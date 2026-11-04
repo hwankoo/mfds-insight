@@ -49,6 +49,13 @@ max_retries     = 4
 backoff_base    = 1.5            # 지수 백오프 기준(초)
 rate_limit_qps  = 2.0            # 초당 요청 수 상한 (기관 API 예의)
 
+# 수집 완전성 검사 — 통과하지 못하면 캐시를 갱신하지 않고 실패로 끝납니다.
+#   · totalCount 대비 누락, max_pages 상한 도달
+#   · 직전 정식 수집 대비 건수가 아래 비율(%)을 넘게 감소
+max_row_drop_pct = 5
+# 응답 본문의 결과코드 위치. 00(정상)·03(데이터 없음) 외 값이면 즉시 중단합니다.
+result_code_path = ["header", "resultCode"]
+
 # 응답 JSON에서 레코드 배열까지의 경로. probe 명령으로 확인 후 수정합니다.
 records_path = ["body", "items"]
 total_path   = ["body", "totalCount"]
@@ -76,7 +83,7 @@ CHG_DT               = "변경일자"
 
 # ------------------------------------------------------------
 # 파생 컬럼: 원본에 없는 값을 규칙으로 만들어 냅니다.
-#   from   = 근거가 되는 표준 컬럼
+#   source = 근거가 되는 표준 컬럼
 #   rules  = [찾을문자열, 결과값] 목록. 위에서부터 먼저 걸리는 것을 적용.
 #   default= 어느 것도 걸리지 않을 때 값
 # ------------------------------------------------------------
@@ -130,6 +137,9 @@ id       = "dental-implant"
 title    = "치과용 임플란트 고정체 허가 동향"
 slug     = "dental-implant-fixture"
 keywords = ["치과용임플란트고정체", "치과용임플란트"]
+# "치과용임플란트" 부분일치는 상부구조물·시술기구까지 잡으므로 명시적으로 제외한다.
+# build 로그의 "포함된 품목명 상위" 를 보고 범위가 맞는지 확인하십시오.
+exclude  = ["상부구조물", "어버트먼트", "시술기구", "수술기구"]
 filters  = {}
 charts   = ["yearly_trend", "status_mix", "top_companies", "domestic_vs_import"]
 summary  = "국내 치과용 임플란트 고정체의 연도별 허가 추이와 업체 분포를 정리한 리포트입니다."

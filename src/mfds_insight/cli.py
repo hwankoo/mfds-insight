@@ -16,15 +16,52 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from . import config as cfgmod
 from .config import ConfigError
-from .pipeline import normalize, save_cache, load_cache, select, summarize
+from .pipeline import normalize, save_cache, load_cache, read_cache_meta, select, summarize
 from .render import draw_charts, render_report, render_index
 
 
-def _fetch(settings, sample: int | None = None) -> None:
+class IntegrityError(RuntimeError):
+    """수집 결과가 불완전해 게시하면 안 되는 상태."""
+
+
+def check_completeness(run: dict, previous: dict, settings) -> list[str]:
+    """수집 완전성 검사. 위반 사유 목록을 돌려준다(빈 목록이면 통과).
+
+    1) totalCount 대비 수집 건수 부족, 또는 max_pages 상한 도달
+    2) 직전 정식 수집 대비 건수가 api.max_row_drop_pct(기본 5%) 넘게 감소
+       — 허가 목록은 누적 데이터라 정상적으로는 거의 줄지 않는다.
+    """
+    problems: list[str] = []
+    total, fetched = run.get("total_count"), int(run.get("fetched", 0))
+    if run.get("stop_reason") == "max_pages":
+        problems.append(f"max_pages 상한에서 중단됨({fetched}건 수집). api.max_pages 를 늘리십시오.")
+    if total is not None and fetched < total:
+        problems.append(f"totalCount {total}건 중 {fetched}건만 수집됨({total - fetched}건 누락).")
+    elif total is None and not run.get("complete", False):
+        problems.append(f"totalCount 를 알 수 없고 수집이 정상 종료되지 않음({run.get('stop_reason')}).")
+
+    prev = previous.get("fetched", previous.get("rows"))
+    drop_pct = float(settings.api.get("max_row_drop_pct", 5))
+    if prev and not previous.get("sample"):
+        prev = int(prev)
+        if fetched < prev * (1 - drop_pct / 100):
+            problems.append(
+                f"직전 수집 {prev}건 대비 {fetched}건으로 {100 * (prev - fetched) / prev:.1f}% 감소"
+                f"(허용 {drop_pct:g}%). API 범위·필터 변경 여부를 확인하십시오.")
+    return problems
+
+
+def _fetch(settings, sample: int | None = None, allow_incomplete: bool = False) -> str:
+    """수집 후 캐시에 저장하고 캐시 이름을 돌려준다.
+
+    --sample 수집은 정식 캐시(raw)를 덮어쓰지 않도록 'sample' 캐시에 저장한다.
+    정식 수집은 완전성 검사를 통과해야만 raw 캐시를 교체한다(실패 시 기존 캐시 유지).
+    """
     from .client import MfdsClient
     records: list[dict] = []
     with MfdsClient(settings) as client:
@@ -32,9 +69,29 @@ def _fetch(settings, sample: int | None = None) -> None:
             records.append(rec)
             if sample and len(records) >= sample:
                 break
+        run = dict(client.last_run)
     if not records:
         raise SystemExit("수집된 레코드가 없습니다. `probe` 로 응답 구조를 확인하십시오.")
-    save_cache(normalize(records, settings), settings)
+
+    meta = {"source_url": client.full_url(), **run, "sample": bool(sample)}
+    if sample:
+        save_cache(normalize(records, settings), settings, name="sample", extra_meta=meta)
+        print(f"\n시험 수집 {len(records)}건 → cache/sample.* (정식 캐시 raw 는 그대로 둡니다)")
+        print("미리보기:  python run.py build --cache sample")
+        return "sample"
+
+    problems = check_completeness(run, read_cache_meta(settings, "raw"), settings)
+    if problems:
+        for p in problems:
+            print(f"  [무결성] {p}", file=sys.stderr)
+        if not allow_incomplete:
+            raise IntegrityError(
+                "수집 결과가 완전성 검사를 통과하지 못해 캐시를 갱신하지 않았습니다. "
+                "원인을 확인한 뒤 다시 실행하거나, 의도한 것이면 --allow-incomplete 를 지정하십시오.")
+        print("  [경고] --allow-incomplete 지정 — 불완전한 데이터로 캐시를 갱신합니다.", file=sys.stderr)
+        meta["integrity_override"] = problems
+    save_cache(normalize(records, settings), settings, name="raw", extra_meta=meta)
+    return "raw"
 
 
 def _dump(settings, limit: int | None) -> None:
@@ -85,8 +142,14 @@ def _dump(settings, limit: int | None) -> None:
     print("\n[주의] 이 파일은 allowlist 를 거치지 않은 원본입니다. 그대로 게시하지 마십시오.")
 
 
-def _build(settings) -> None:
-    df = load_cache(settings)
+def _build(settings, cache: str = "raw") -> None:
+    df = load_cache(settings, cache)
+    if cache != "raw" or read_cache_meta(settings, cache).get("sample"):
+        # 시험 수집분으로 만든 사이트는 모든 페이지에 표시해 정식 게시물과 혼동을 막는다.
+        notice = (f"미리보기: 시험 수집 캐시({cache}, {len(df):,}행)로 생성한 페이지입니다. "
+                  "수치는 전체 데이터가 아니므로 인용하지 마십시오.")
+        settings = replace(settings, site={**settings.site, "notice": notice})
+        print(f"  [주의] {notice}", file=sys.stderr)
     out = settings.output_dir
     if out.exists():
         shutil.rmtree(out)           # 이전 산출물 잔존 방지(구 데이터 유출 차단)
@@ -242,6 +305,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", type=Path, default=None, help="프로젝트 루트")
     p.add_argument("--sample", type=int, default=None,
                help="fetch/dump 시 가져올 최대 레코드 수 (예: --sample 300)")
+    p.add_argument("--cache", default=None,
+               help="build 에 사용할 캐시 이름 (기본 raw, 시험 수집분은 sample)")
+    p.add_argument("--allow-incomplete", action="store_true",
+               help="완전성 검사 실패 시에도 캐시를 갱신 (원인 확인 후에만 사용)")
     p.add_argument("--port", type=int, default=8000, help="serve 포트 (기본 8000)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
@@ -267,10 +334,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "dump":
             _dump(settings, args.sample)
             return 0
+        cache = args.cache or "raw"
         if args.command in ("fetch", "run"):
-            _fetch(settings, args.sample)
+            cache = _fetch(settings, args.sample, args.allow_incomplete)
         if args.command in ("build", "run"):
-            _build(settings)
+            _build(settings, args.cache or cache)
         return 0
     except ConfigError as exc:
         print(f"오류: {exc}", file=sys.stderr)
